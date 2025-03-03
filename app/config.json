@@ -1,6 +1,13 @@
 {
   "Settings" : {
     "Debug": true,
-    "FrontendURL": ""
+    "FrontendURL": "",
+    "Database": {
+      "Host": "",
+      "Port": 0,
+      "User": "",
+      "Password": "",
+      "DatabaseName": ""
+    }
   }
 }

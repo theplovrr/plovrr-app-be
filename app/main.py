@@ -1,6 +1,12 @@
-from fastapi import FastAPI, Response, Request, HTTPException
+import asyncio
+
+from fastapi import FastAPI, Response, Request, HTTPException, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.database.crud import get_users, create_user
+from app.database.database import get_db
 from config import Config
-from app.models.user import User, LoginRequest
+from app.models.user import User, LoginRequest, RegisterRequest
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 from fastapi.middleware.cors import CORSMiddleware
@@ -88,12 +94,26 @@ def logout(response: Response):
     response.delete_cookie("access_token")
     return {"message": "Logged out"}
 
+@app.get("/listusers")
+async def list_users(db: AsyncSession = Depends(get_db)):
+    return await get_users(db)
+
+@app.post("/register")
+async def register_user(registerRequest: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    new_user = await create_user(db,
+                             registerRequest.firstname,
+                             registerRequest.lastname,
+                             registerRequest.email,
+                             registerRequest.password)
+    return new_user
+
 
 
 
 import os
 
 if __name__ == "__main__":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="127.0.0.1", port=port)

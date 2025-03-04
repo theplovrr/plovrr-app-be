@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
-from sqlalchemy.exc import NoResultFound
+from sqlalchemy.exc import NoResultFound, IntegrityError
 from .models import User
 
 # Create a new user
@@ -10,9 +10,11 @@ async def create_user(db: AsyncSession, firstname: str, lastname: str, email: st
         db.add(new_user)
         await db.commit()
         await db.refresh(new_user)
+        return ''
+    except IntegrityError as e:
+        raise Exception('Email already in use')
     except Exception as e:
-        print(str(e))
-    return new_user
+        raise Exception('Something went wrong')
 
 # Get all users
 async def get_users(db: AsyncSession):
@@ -25,6 +27,14 @@ async def get_user(db: AsyncSession, user_id: int):
     user = result.scalars().first()
     if not user:
         raise NoResultFound
+    return user
+
+# Get a single user by ID
+async def get_user_by_login(db: AsyncSession, email: str):
+    result = await db.execute(select(User).filter(User.email == email))
+    user = result.scalars().first()
+    if not user:
+        return None
     return user
 
 # Update a user

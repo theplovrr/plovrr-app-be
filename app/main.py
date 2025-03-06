@@ -2,8 +2,6 @@ import asyncio
 
 from argon2 import PasswordHasher
 from fastapi import FastAPI, Response, Request, HTTPException, Depends
-from sqlalchemy import nullsfirst
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database.crud import get_users, create_user, get_user_by_login
@@ -26,10 +24,6 @@ origins = [
     config.get("Settings.FrontendURL"), "http://127.0.0.1:8000"
 ]
 
-# origins = [
-#     "http://localhost:5173/", "http://127.0.0.1:8000/"
-# ]
-
 app.add_middleware(CORSMiddleware,
                    # allow_origins=["*"],
                    allow_origins=origins,  # React frontend
@@ -39,14 +33,9 @@ app.add_middleware(CORSMiddleware,
 
 ph = PasswordHasher()
 
-users = {
-    'test@email.com': User(email='test@email.com', password='123456', firstname='first1', lastname='last1'),
-    'test2@email.com': User(email='test2@gmail.com', password='qwerty', firstname='first2', lastname='last2')
-}
-
 def create_access_token(data: dict, expires_delta: timedelta = None):
     to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=15))
+    expire = datetime.utcnow() + (expires_delta or timedelta(minutes=30))
     to_encode.update({"exp": expire})
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -56,12 +45,6 @@ def read_root():
             "debug": config.get("Settings.Debug"),
             "frontendUrl": config.get("Settings.FrontendURL")}
 
-@app.get("/users/{user_email}")
-def get_user(user_email:str):
-    try:
-        return users[user_email]
-    except Exception as e:
-        return { 'error' : f'{str(e)}'}
 
 @app.post("/login")
 async def login(response: Response, loginRequest: LoginRequest, db: AsyncSession = Depends(get_db)):
@@ -75,7 +58,7 @@ async def login(response: Response, loginRequest: LoginRequest, db: AsyncSession
         raise HTTPException(status_code=401, detail='Incorrect password')
 
     user_data = {"sub": user.email}  # Payload for JWT
-    token = create_access_token(user_data)
+    token = create_access_token(user_data, timedelta(minutes=600))
 
     # Set token in HttpOnly cookie
     response.set_cookie(
@@ -88,7 +71,7 @@ async def login(response: Response, loginRequest: LoginRequest, db: AsyncSession
     return {"email": user.email, "firstname": user.firstname, "lastname": user.lastname}
 
 @app.get("/protected")
-def protected_route(request: Request):
+async def protected_route(request: Request, db: AsyncSession = Depends(get_db)):
     token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -96,14 +79,18 @@ def protected_route(request: Request):
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         email = payload.get("sub")
-        user = users[email]
+        user = await get_user_by_login(db, email)
         return { "email": user.email, "firstname": user.firstname, "lastname": user.lastname }
     except JWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
 @app.post("/logout")
-def logout(response: Response):
-    response.delete_cookie("access_token")
+async def logout(response: Response):
+    response.delete_cookie(key="access_token",
+        httponly=True,
+        samesite="none",
+        secure=True,
+    )
     return {"message": "Logged out"}
 
 @app.get("/listusers")
